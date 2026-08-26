@@ -28,3 +28,7 @@ python3 -m http.server 8765
 ```
 
 Then open `http://localhost:8765`.
+
+## V2 bidirectional concept
+
+The `V2` folder contains the Google Apps Script connector for a live, authenticated version. V2 uses the team Google Sheet as the source of truth and supports dashboard-to-sheet updates, including new rows and columns. Deploy V2 only through an authenticated company platform; keep V1 as the static fallback.
