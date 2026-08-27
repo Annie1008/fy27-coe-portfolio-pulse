@@ -78,20 +78,24 @@ function saveDashboardData(data) {
     const existing = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, lastColumn).getDisplayValues() : [];
     const idColumn = headers.indexOf('Item ID');
     if (idColumn < 0) throw new Error('Item ID column was not found.');
-    const editableHeaders = ['Deliverables', 'Phase', 'Health Indicator', 'CoE Owner'];
-    const editableColumns = editableHeaders.map(header => headers.indexOf(header)).filter(index => index >= 0);
-    if (headers.some((header, index) => index >= lastColumn && !header)) throw new Error('The dashboard columns do not match the live sheet. Refresh before saving.');
+    const liveHeaders = existing[0] || [];
+    const derivedHeaders = ['Due-Date Status', 'Executive Attention Required'];
+    const formulaColumns = sheet.getRange(2, 1, 1, lastColumn).getFormulas()[0];
+    const editableColumns = liveHeaders.map((header, index) => ({
+      sourceIndex: index,
+      dataIndex: headers.indexOf(header)
+    })).filter(column => column.dataIndex >= 0 && !derivedHeaders.includes(liveHeaders[column.sourceIndex]) && !formulaColumns[column.sourceIndex]);
+    if (!liveHeaders.length || headers.filter(header => !derivedHeaders.includes(header)).some(header => !liveHeaders.includes(header))) throw new Error('The dashboard columns do not match the live sheet. Refresh before saving.');
     const existingById = new Map(existing.slice(1).map((row, index) => [row[idColumn], index + 3]));
     rows.filter(row => row[idColumn]).forEach(row => {
       const targetRow = existingById.get(row[idColumn]);
       if (!targetRow) {
-        const newRow = Array(headers.length).fill('');
-        newRow[idColumn] = row[idColumn];
-        editableColumns.forEach(index => newRow[index] = row[index] || '');
-        sheet.getRange(sheet.getLastRow() + 1, 1, 1, headers.length).setValues([newRow]);
+        const newRow = Array(lastColumn).fill('');
+        editableColumns.forEach(column => newRow[column.sourceIndex] = row[column.dataIndex] || '');
+        sheet.getRange(sheet.getLastRow() + 1, 1, 1, lastColumn).setValues([newRow]);
         return;
       }
-      editableColumns.forEach(index => sheet.getRange(targetRow, index + 1).setValue(row[index] || ''));
+      editableColumns.forEach(column => sheet.getRange(targetRow, column.sourceIndex + 1).setValue(row[column.dataIndex] || ''));
     });
     return { ok: true, count: rows.length };
   } finally {
