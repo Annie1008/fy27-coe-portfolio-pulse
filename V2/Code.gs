@@ -59,7 +59,7 @@ function doGet() {
 function getDashboardData() {
   if (!dashboardUserIsAllowed_()) throw new Error('Access denied. Use an approved company account.');
   const data = readDashboardPortfolio_();
-  return { ...data, refreshedAt: new Date().toISOString(), availableFields: data.headers };
+  return { ...data, refreshedAt: new Date().toISOString(), availableFields: data.headers, rowCount: data.rows.length };
 }
 
 function saveDashboardData(data) {
