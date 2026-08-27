@@ -18,9 +18,11 @@ function dashboardUserIsAllowed_() {
 
 function readDashboardPortfolio_() {
   const sheet = getDashboardSheet_();
-  const values = sheet.getDataRange().getDisplayValues();
-  if (values.length < 2) return { headers: [], rows: [] };
-  return { headers: values[1], rows: values.slice(2).filter(row => row[0]) };
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  if (lastRow < 2 || lastColumn < 1) return { headers: [], rows: [] };
+  const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getDisplayValues();
+  return { headers: values[0], rows: values.slice(1).filter(row => row[0]) };
 }
 
 function doGet() {
@@ -44,19 +46,16 @@ function saveDashboardData(data) {
     const sheet = getDashboardSheet_();
     const headers = data.headers || [];
     const rows = data.rows || [];
-    const existing = sheet.getDataRange().getDisplayValues();
+    const lastRow = sheet.getLastRow();
+    const lastColumn = Math.max(sheet.getLastColumn(), headers.length);
+    const existing = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, lastColumn).getDisplayValues() : [];
     const idColumn = headers.indexOf('Item ID');
     if (idColumn < 0) throw new Error('Item ID column was not found.');
     headers.forEach((header, index) => {
-      if (!existing[1] || existing[1][index] !== header) sheet.getRange(2, index + 1).setValue(header);
+      if (!existing[0] || existing[0][index] !== header) sheet.getRange(2, index + 1).setValue(header);
     });
-    rows.forEach(row => {
-      const id = row[idColumn];
-      if (!id) return;
-      const existingIndex = existing.findIndex((item, index) => index > 1 && item[0] === id);
-      const targetRow = existingIndex > 1 ? existingIndex + 1 : Math.max(sheet.getLastRow() + 1, 3);
-      sheet.getRange(targetRow, 1, 1, headers.length).setValues([headers.map((_, index) => row[index] || '')]);
-    });
+    const output = rows.filter(row => row[idColumn]).map(row => headers.map((_, index) => row[index] || ''));
+    if (output.length) sheet.getRange(3, 1, output.length, headers.length).setValues(output);
     return { ok: true, count: rows.length };
   } finally {
     lock.releaseLock();
@@ -70,8 +69,10 @@ function doPost(request) {
   lock.waitLock(10000);
   try {
     const sheet = getDashboardSheet_();
-    const values = sheet.getDataRange().getDisplayValues();
-    const headers = values[1] || [];
+    const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
+    const values = lastRow >= 2 && lastColumn ? sheet.getRange(2, 1, lastRow - 1, lastColumn).getDisplayValues() : [];
+    const headers = values[0] || [];
     const idColumn = headers.indexOf('Item ID');
     if (idColumn < 0) throw new Error('Item ID column was not found.');
     if (body.action === 'addColumn') {
@@ -84,8 +85,8 @@ function doPost(request) {
       const row = body.row || {};
       const id = String(row['Item ID'] || '').trim();
       if (!id) throw new Error('Item ID is required.');
-      const existingIndex = values.findIndex((item, index) => index > 1 && item[idColumn] === id);
-      const targetRow = existingIndex > 1 ? existingIndex + 1 : Math.max(sheet.getLastRow() + 1, 3);
+      const existingIndex = values.findIndex((item, index) => index > 0 && item[idColumn] === id);
+      const targetRow = existingIndex > 0 ? existingIndex + 2 : Math.max(sheet.getLastRow() + 1, 3);
       const output = headers.map(header => row[header] == null ? '' : row[header]);
       sheet.getRange(targetRow, 1, 1, headers.length).setValues([output]);
       return dashboardJson_({ ok: true, action: 'upsert', id });
