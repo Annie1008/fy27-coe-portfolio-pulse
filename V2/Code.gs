@@ -22,7 +22,33 @@ function readDashboardPortfolio_() {
   const lastColumn = sheet.getLastColumn();
   if (lastRow < 2 || lastColumn < 1) return { headers: [], rows: [] };
   const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getDisplayValues();
-  return { headers: values[0], rows: values.slice(1).filter(row => row[0]) };
+  const headers = values[0];
+  const rows = values.slice(1).filter(row => row[0]);
+  const dueDateColumn = headers.indexOf('Target Due Date');
+  const phaseColumn = headers.indexOf('Phase');
+  const updatedColumn = headers.indexOf('Last Updated Date');
+  if (!headers.includes('Due-Date Status')) {
+    headers.push('Due-Date Status');
+    rows.forEach(row => row.push(deriveDueStatus_(row[dueDateColumn], row[phaseColumn])));
+  }
+  if (!headers.includes('Executive Attention Required')) {
+    headers.push('Executive Attention Required');
+    rows.forEach(row => row.push(updatedColumn >= 0 && row[updatedColumn] ? 'No' : 'Yes'));
+  }
+  return { headers, rows };
+}
+
+function deriveDueStatus_(value, phase) {
+  const text = String(value || '').trim();
+  if (['Completed', 'Canceled', 'Cancelled'].includes(phase)) return phase === 'Completed' ? 'Completed' : 'Canceled';
+  if (!text || /^tbd$|^none$/i.test(text)) return 'No Date / TBD';
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return 'No Date / TBD';
+  const days = Math.ceil((date - new Date()) / 86400000);
+  if (days < 0) return 'Overdue';
+  if (days <= 7) return 'Due Soon (≤7 days)';
+  if (days <= 30) return 'Due Soon (≤30 days)';
+  return 'On Track';
 }
 
 function doGet() {
@@ -32,7 +58,8 @@ function doGet() {
 
 function getDashboardData() {
   if (!dashboardUserIsAllowed_()) throw new Error('Access denied. Use an approved company account.');
-  return readDashboardPortfolio_();
+  const data = readDashboardPortfolio_();
+  return { ...data, refreshedAt: new Date().toISOString(), availableFields: data.headers };
 }
 
 function saveDashboardData(data) {
@@ -47,15 +74,25 @@ function saveDashboardData(data) {
     const headers = data.headers || [];
     const rows = data.rows || [];
     const lastRow = sheet.getLastRow();
-    const lastColumn = Math.max(sheet.getLastColumn(), headers.length);
+    const lastColumn = sheet.getLastColumn();
     const existing = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, lastColumn).getDisplayValues() : [];
     const idColumn = headers.indexOf('Item ID');
     if (idColumn < 0) throw new Error('Item ID column was not found.');
-    headers.forEach((header, index) => {
-      if (!existing[0] || existing[0][index] !== header) sheet.getRange(2, index + 1).setValue(header);
+    const editableHeaders = ['Deliverables', 'Phase', 'Health Indicator', 'CoE Owner'];
+    const editableColumns = editableHeaders.map(header => headers.indexOf(header)).filter(index => index >= 0);
+    if (headers.some((header, index) => index >= lastColumn && !header)) throw new Error('The dashboard columns do not match the live sheet. Refresh before saving.');
+    const existingById = new Map(existing.slice(1).map((row, index) => [row[idColumn], index + 3]));
+    rows.filter(row => row[idColumn]).forEach(row => {
+      const targetRow = existingById.get(row[idColumn]);
+      if (!targetRow) {
+        const newRow = Array(headers.length).fill('');
+        newRow[idColumn] = row[idColumn];
+        editableColumns.forEach(index => newRow[index] = row[index] || '');
+        sheet.getRange(sheet.getLastRow() + 1, 1, 1, headers.length).setValues([newRow]);
+        return;
+      }
+      editableColumns.forEach(index => sheet.getRange(targetRow, index + 1).setValue(row[index] || ''));
     });
-    const output = rows.filter(row => row[idColumn]).map(row => headers.map((_, index) => row[index] || ''));
-    if (output.length) sheet.getRange(3, 1, output.length, headers.length).setValues(output);
     return { ok: true, count: rows.length };
   } finally {
     lock.releaseLock();

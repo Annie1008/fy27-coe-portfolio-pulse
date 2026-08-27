@@ -5,6 +5,7 @@ V2 is the bidirectional version. V1 remains the stable static dashboard in the p
 ## Target behavior
 
 - Google Sheet is the single source of truth.
+- Metrics are calculated only from fields present in the live team tab; derived due and attention fields are labeled by deterministic rules.
 - Dashboard reads current rows from the team sheet.
 - Dashboard edits update the team sheet.
 - New rows and columns are written to the team sheet.
